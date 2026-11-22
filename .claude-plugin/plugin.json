@@ -1,0 +1,21 @@
+{
+  "name": "long2short",
+  "version": "0.1.0",
+  "description": "Turn long landscape videos into captioned 9:16 short-form clips (TikTok, Reels, Shorts) with subject tracking, word-synced captions, hooks, stickers and sound effects.",
+  "license": "MIT",
+  "keywords": [
+    "video",
+    "tiktok",
+    "reels",
+    "shorts",
+    "captions",
+    "vertical",
+    "hyperframes"
+  ],
+  "author": {
+    "name": "sebsch1337",
+    "url": "https://github.com/sebsch1337"
+  },
+  "homepage": "https://github.com/sebsch1337/long2short",
+  "repository": "https://github.com/sebsch1337/long2short"
+}

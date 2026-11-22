@@ -1,0 +1,16 @@
+{
+  "name": "long2short",
+  "owner": {
+    "name": "sebsch1337"
+  },
+  "plugins": [
+    {
+      "name": "long2short",
+      "source": "./",
+      "description": "Long video -> captioned vertical short-form clips, locally on macOS."
+    }
+  ],
+  "metadata": {
+    "description": "Long landscape video -> captioned vertical short-form clips (TikTok, Reels, Shorts), locally on macOS."
+  }
+}
