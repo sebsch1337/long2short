@@ -61,6 +61,15 @@ def target(det):
     # generic saliency proved unreliable (picked masts/roofs) -> objects only via --seed tracking
     return None, None, "none"
 
+def rdp(pts, eps):
+    """Ramer-Douglas-Peucker on (t, x) points – x tolerance eps"""
+    if len(pts) < 3: return pts
+    (t0, x0), (t1, x1) = pts[0], pts[-1]
+    d = [abs(x - (x0 + (x1 - x0) * (t - t0) / max(t1 - t0, 1e-9))) for t, x in pts[1:-1]]
+    k = int(np.argmax(d)) + 1
+    if d[k - 1] <= eps: return [pts[0], pts[-1]]
+    return rdp(pts[:k + 1], eps)[:-1] + rdp(pts[k:], eps)
+
 def follow(xs):
     known = [x for x in xs if x is not None]
     cam = float(np.median(known[:8])) if known else 0.5
@@ -153,9 +162,12 @@ def plan(a, b, scenes, tmp, seeds=()):
         cam = follow(medfilt([xs[i] for i in idx], 5))   # +-1 s persistence before the crop reacts
         cys = medfilt([raw[i][1] for i in idx], 5); cy0 = next((c for c in cys if c is not None), 0.42)
         cyf = [c if c is not None else cy0 for c in cys]
-        for k in range(0, len(idx), 2):
-            keys.append([round(ts[idx[k]] if k else max(s0, a), 3), round(cam[k], 3), round(cyf[k], 3)])
-        keys.append([round(min(s1, b) - 0.001, 3), round(cam[-1], 3), round(cyf[-1], 3)])
+        # keep only the keys that matter (Ramer-Douglas-Peucker, 1.5 % of the width): the camera then
+        # makes a few deliberate moves and holds in between, like a hand-set path, instead of hunting
+        pts = [(max(s0, a), cam[0])] + [(ts[idx[k]], cam[k]) for k in range(1, len(idx))] + [(min(s1, b) - 0.001, cam[-1])]
+        for t, x in rdp(pts, 0.015):
+            k = min(range(len(idx)), key=lambda q: abs(ts[idx[q]] - t))
+            keys.append([round(t, 3), round(x, 3), round(cyf[k], 3)])
         for i, c in zip(idx, cam): cams[i] = c
         fast = (np.abs(np.diff(cam)) > VMAX / FPS * 0.9) if len(cam) > 1 else np.array([False])
         run = best = 0
