@@ -24,6 +24,12 @@ A good clip has:
 Before cutting, check boundaries in `words.json`: start on the first word of a sentence, end on
 the last word of the payoff. Leave out greetings and transitions to the next location.
 
+## Foreign-language dialogue and burned-in subtitles
+Look for subtitles already burned into the source (contact sheets show them at the bottom). If the
+original translates a dialogue, reuse that translation as `phrases` (timed to the speech) and
+`cover` the burned-in band – otherwise viewers see two competing subtitle lines, and the
+original ones are usually cut off by the 9:16 crop anyway.
+
 ## Hook text (top, first ~3 s)
 - 2 short lines, max ~22 characters each, uppercase in the render. Line 1 = topic/place,
   line 2 = the twist. Accent 1–2 words in yellow. One emoji at most.

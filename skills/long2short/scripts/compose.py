@@ -21,7 +21,15 @@ def peak(path):
     return float(np.argmax(env)) * 0.05
 
 cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", base, "-i", ov]
-fc = ["[0:v][1:v]overlay=0:0:format=auto:shortest=1,format=yuv420p[v]"]
+# "cover": [[start, end], ...] blurs a horizontal band (default y 1660-1880, set "cover_band") where the
+# source has burned-in subtitles, so they don't clash with our captions
+cov = cfg.get("cover", [])
+if cov:
+    y0, y1 = cfg.get("cover_band", [1660, 1880]); en = "+".join(f"between(t,{a},{b})" for a, b in cov)
+    fc = [f"[0:v]split[b0][b1];[b1]crop=1080:{y1 - y0}:0:{y0},format=yuv444p,boxblur=28:3,eq=brightness=-0.06[bl];"
+          f"[b0][bl]overlay=0:{y0}:enable='{en}'[bv];[bv][1:v]overlay=0:0:format=auto:shortest=1,format=yuv420p[v]"]
+else:
+    fc = ["[0:v][1:v]overlay=0:0:format=auto:shortest=1,format=yuv420p[v]"]
 mix = ["[0:a]"]
 for i, c in enumerate(cfg.get("sfx", [])):
     f = os.path.join(proj, c["file"]) if "file" in c else os.path.join(proj, "assets", "sfx", c["sound"] + ".mp3")

@@ -34,6 +34,13 @@ Written by you after `align`; `l2s.py build` fills in `project`, `mode`, `words`
   `~/.cache/long2short/assets/sfx`, copied into each clip's `hf/assets/sfx`). To add one, put an
   `.mp3` into the clip's `hf/assets/sfx/` or add it to `SOUNDS` in `l2s.py` (download at setup).
 - Hook and sticker text sizes adapt to the frame width automatically.
+- `phrases` – whole-sentence captions without word highlighting, e.g. a translation of
+  foreign-language dialogue: `[{"text": "Wie heißt du?", "start": 46.6, "end": 49.9}]`. Word
+  captions inside a phrase window are dropped automatically. Take the timing from the speech
+  (the transcript usually contains the foreign words with times).
+- `cover` – time ranges where the source has **burned-in subtitles**; a blurred band hides them so
+  they don't clash with our captions: `[[10.0, 44.3]]`. Band position: `cover_band` (default
+  `[1660, 1880]` px in the 1080×1920 output).
 
 # clips/clipNN/spec.json (written by `plan`, edit only to fix a crop)
 

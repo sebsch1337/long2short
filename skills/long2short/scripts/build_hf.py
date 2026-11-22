@@ -48,6 +48,10 @@ while i < len(words):
         i += 1; continue
     out.append(w); i += 1
 words = [w for w in out if w["text"].strip()]
+# "phrases": whole-sentence captions (e.g. translations of foreign-language dialogue) replace the
+# word captions inside their time window: [{"text": "...", "start": s, "end": e}, ...]
+PHR = sorted(cfg.get("phrases", []), key=lambda p: p["start"])
+words = [w for w in words if not any(p["start"] - 0.05 <= w["start"] < p["end"] for p in PHR)]
 for k, w in enumerate(words):
     w["id"] = f"w{k}"
     w["end"] = min(w["end"], DUR - 0.05)
@@ -92,7 +96,13 @@ for gi, g in enumerate(G):
         spans.append(f'<span class="{cls}" id="cw{k}" style="font-size:{size}px"><span class="cw-bg"></span><span class="cw-t">{html.escape(w["text"].upper())}</span></span>')
     cap_html.append(f'    <div class="cg" id="cg{gi}">{" ".join(spans)}</div>')
 
-TIMING = {"groups": [{"id": f"cg{gi}", "start": g["start"], "end": g["end"], "words": g["w"]} for gi, g in enumerate(G)],
+for pi, ph in enumerate(PHR):
+    toks = ph["text"].split()
+    size = int(max(50, min(80, 860 * 2.6 / (max(len(ph["text"]), 1) * 0.72))))
+    spans = [f'<span class="cw" style="font-size:{size}px"><span class="cw-t">{html.escape(t.upper())}</span></span>' for t in toks]
+    cap_html.append(f'    <div class="cg" id="cp{pi}">{" ".join(spans)}</div>')
+TIMING = {"groups": [{"id": f"cg{gi}", "start": g["start"], "end": g["end"], "words": g["w"]} for gi, g in enumerate(G)]
+          + [{"id": f"cp{pi}", "start": round(max(0.12, ph["start"]), 3), "end": round(min(ph["end"], DUR - 0.02), 3), "words": []} for pi, ph in enumerate(PHR)],
           "words": [{"start": w["start"], "end": w["end"]} for w in words]}
 
 captions = f"""<template>
