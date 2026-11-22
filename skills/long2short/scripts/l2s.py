@@ -54,7 +54,7 @@ def cmd_setup(a):
     if not VENV_PY.exists():
         run([sys.executable, "-m", "venv", str(CACHE / "venv")])
     run([str(VENV_PY), "-m", "pip", "install", "-q", "--upgrade", "pip"])
-    run([str(VENV_PY), "-m", "pip", "install", "-q", "torch", "torchaudio", "numpy", "pillow"])
+    run([str(VENV_PY), "-m", "pip", "install", "-q", "torch", "torchaudio", "numpy", "pillow", "opencv-python-headless"])
     # 2) Apple Vision helpers
     for n in ("vision_track", "vision_follow"):
         print("compiled", swift_bin(n))
@@ -252,6 +252,7 @@ def hf_dir(P, n):
         if not (ASSETS / "fonts" / "montserrat-var.ttf").exists(): sys.exit("fonts/sounds missing – run: l2s.py setup")
         json.dump({"id": f"clip{int(n):02d}", "name": f"clip{int(n):02d}"}, open(h / "meta.json", "w"))
         json.dump({"name": f"clip{int(n):02d}", "private": True, "type": "module"}, open(h / "package.json", "w"))
+    if not (h / "assets" / "fonts").exists() or not (h / "assets" / "sfx").exists():
         shutil.copytree(ASSETS / "fonts", h / "assets" / "fonts", dirs_exist_ok=True)
         shutil.copytree(ASSETS / "sfx", h / "assets" / "sfx", dirs_exist_ok=True)
     return h

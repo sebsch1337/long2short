@@ -68,9 +68,17 @@ l2s.py -p P finish NN "NN_short-title"   # cut -> graphics -> render -> compose
 - **Crop review costs tokens – only look when told to.** `plan` prints `no anomalies` or
   a list of ANOMALIES. Only then open `clips/clipNN/spec.review.jpg` (yellow box = 9:16 window,
   red dot = tracked subject, cyan grid in 0.1 steps).
-- **Objects** (drone, robot, car) are not found automatically: for a stretch reported as
-  "no person", read the object's position from the grid and re-run `plan` with
-  `--seed T:CX:CY` (source time, x, y in 0–1). It snaps to the object and tracks it.
+- **Stretches without a person** (phone in the hand, a passing car, a robot, a pan between two
+  people) are your job – automatic object detection (YOLO) was tried and rejected because
+  per-frame detections jitter. Read the subject's position from the grid and **set the camera
+  path by hand** in `spec.json → keys` (`[source time, centre x]`), then `l2s.py cut NN`:
+  - a key where the subject is, another where it has moved to – the renderer glides between them
+    (sub-pixel, gaussian-smoothed); between moves hold the position (two keys with the same x)
+  - one move per idea: a pan between two people is *one* smooth move, not a back-and-forth
+  - keys every 1–3 s while following something, never chase every wobble of the camera
+  - real cuts go into `cuts` (the window may jump there); start each shot with its own key
+  For a small object that moves a lot (a drone in the sky), `--seed T:CX:CY` (source time,
+  x, y) instead lets Apple Vision track it from one point.
 - **Text fixes before alignment.** Correct mis-heard words in `words_raw.json`; if a passage is
   unintelligible, drop it from captions (`drop` in hf_config) rather than guessing.
 - Run `align` once for several clips to save time.

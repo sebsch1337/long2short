@@ -6,7 +6,8 @@ spec: {src, out, segments:[{start, end, astart?, keys:[[t_abs, cx, cy?],...], cu
 Clean edges: if a scene change lies within 0.6 s inside a segment's start or end, the picture is
 trimmed to that scene change and the gap is filled by holding the first/last frame of the wanted
 shot (audio stays untouched) -> no frames of the neighbouring shot ever leak in.
-Output: ProRes 422 HQ via VideoToolbox (.mov) or x264 (.mp4); audio -14 LUFS.
+Sub-pixel window placement (OpenCV) -> smooth pans. Output: ProRes 422 HQ via VideoToolbox (.mov)
+or x264 (.mp4); audio -14 LUFS.
 """
 import json, os, subprocess, sys
 import numpy as np
@@ -36,34 +37,58 @@ def path(seg, col):
         v[m] = np.convolve(np.pad(xs, r, mode="edge"), g, mode="valid")
     return t - s0, v
 
-cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
-fc, n = [], len(spec["segments"])
-for i, seg in enumerate(spec["segments"]):
+# ---- rendering ---------------------------------------------------------------------------------
+# The 9:16 window is cut with SUB-PIXEL precision per frame (OpenCV warpAffine, Lanczos) instead of
+# ffmpeg's crop filter: crop can only move in whole (even) pixels and its per-frame commands can land a
+# frame late – both make slow pans judder. Frames are decoded once (VideoToolbox), transformed in
+# Python and piped into the encoder; audio is processed separately and muxed losslessly.
+import cv2
+
+S = 1080 / CW                                   # scale from source window to output (window height -> 1920)
+segs = spec["segments"]; tmpv = spec["out"] + ".video.mov"; tmpa = spec["out"] + ".audio.wav"
+
+def reader(v0, v1):
+    return subprocess.Popen(["ffmpeg", "-v", "error", "-hwaccel", "videotoolbox", "-ss", f"{v0}", "-to", f"{v1}", "-i", PRJ["src"],
+                             "-vf", f"fps={PRJ.get('fps', '30000/1001')}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
+                            stdout=subprocess.PIPE, bufsize=W * H * 3 * 2)
+
+venc = ["-c:v", "prores_videotoolbox", "-profile:v", "hq", "-pix_fmt", "p210le"] if spec["out"].endswith(".mov") else \
+       ["-c:v", "libx264", "-preset", "medium", "-crf", "16", "-g", "30", "-pix_fmt", "yuv420p"]
+enc = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", "1080x1920",
+                        "-r", str(PRJ.get("fps", "30000/1001")), "-i", "-", *venc, tmpv], stdin=subprocess.PIPE)
+FB = W * H * 3
+for i, seg in enumerate(segs):
     s0, s1 = seg["start"], seg["end"]
     head = [b for b in SCENES if s0 < b <= s0 + EDGE]; tail = [b for b in SCENES if s1 - EDGE <= b < s1]
-    v0 = max(head) if head else s0; v1 = min(tail) if tail else s1
-    cmd += ["-hwaccel", "videotoolbox", "-ss", f"{v0}", "-to", f"{v1}", "-i", PRJ["src"]]
-    cmd += ["-ss", f"{seg.get('astart', s0)}", "-t", f"{s1 - s0}", "-i", PRJ["src"]]
+    v0 = max(head) if head else s0; v1 = min(tail) if tail else s1      # never show the neighbouring shot
     tt, cx = path(seg, 1)
     wx = np.clip(cx * W - CW / 2, 0, W - CW)
-    cf = os.path.join(D, f"crop{i}.cmd")
-    with open(cf, "w") as fh:            # times relative to the trimmed picture start v0
-        for a, x in zip(tt, wx):
-            if a >= v0 - s0 - 1e-6: fh.write(f"{a - (v0 - s0):.4f} crop@w{i} x {x:.1f};\n")
-    pad = []
-    if v0 > s0: pad.append(f"start_mode=clone:start_duration={v0 - s0:.4f}")
-    if v1 < s1: pad.append(f"stop_mode=clone:stop_duration={s1 - v1:.4f}")
-    tp = f",tpad={':'.join(pad)}" if pad else ""
-    x0 = wx[min(len(wx) - 1, int(round((v0 - s0) * FR)))]
-    fc.append(f"[{2*i}:v]fps={PRJ.get('fps', '30000/1001')},sendcmd=f='{cf}',crop@w{i}={CW}:{H}:{x0:.1f}:0,scale=1080:1920:flags=lanczos{tp},"
-              f"trim=duration={s1 - s0:.4f},setpts=PTS-STARTPTS,setsar=1[v{i}]")
-    fc.append(f"[{2*i+1}:a]aresample=48000,afade=t=in:d=0.03,afade=t=out:st={s1 - s0 - 0.04:.3f}:d=0.04[a{i}]")
+    nout = int(round((s1 - s0) * FR))
+    r = reader(v0, v1); cur, k = None, -1
+    for j in range(nout):
+        t = s0 + j / FR
+        want = int(round((min(max(t, v0), v1 - 1 / FR) - v0) * FR))   # frame index inside [v0, v1) (holds at the edges)
+        while k < want:
+            buf = r.stdout.read(FB)
+            if len(buf) < FB: break                                     # stream ended: keep the last frame
+            cur = np.frombuffer(buf, np.uint8).reshape(H, W, 3); k += 1
+        x = float(wx[min(j, len(wx) - 1)])
+        M = np.float32([[S, 0, -x * S], [0, S, 0]])
+        enc.stdin.write(cv2.warpAffine(cur, M, (1080, 1920), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_REPLICATE).tobytes())
+    r.stdout.close(); r.wait()
     if head or tail: print(f"segment {i}: picture trimmed to scene changes {v0:.2f}-{v1:.2f} (held {v0 - s0:.2f}s / {s1 - v1:.2f}s)")
-fc.append("".join(f"[v{i}][a{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=1[v][a0]")
-fc.append("[a0]loudnorm=I=-14:TP=-1.5:LRA=11[a]")
-cmd += ["-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]"]
-if spec["out"].endswith(".mov"):
-    cmd += ["-c:v", "prores_videotoolbox", "-profile:v", "hq", "-pix_fmt", "p210le", "-c:a", "pcm_s16le", spec["out"]]
-else:
-    cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "16", "-g", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", spec["out"]]
-subprocess.run(cmd, check=True); print("ok", spec["out"])
+enc.stdin.close(); enc.wait()
+
+# audio: same segments (J-cut via astart), short fades at the joins, loudness -14 LUFS
+cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+fc = []
+for i, seg in enumerate(segs):
+    L = seg["end"] - seg["start"]
+    cmd += ["-ss", f"{seg.get('astart', seg['start'])}", "-t", f"{L}", "-i", PRJ["src"]]
+    fc.append(f"[{i}:a]aresample=48000,afade=t=in:d=0.03,afade=t=out:st={L - 0.04:.3f}:d=0.04[a{i}]")
+fc.append("".join(f"[a{i}]" for i in range(len(segs))) + f"concat=n={len(segs)}:v=0:a=1,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
+subprocess.run(cmd + ["-filter_complex", ";".join(fc), "-map", "[a]", "-c:a", "pcm_s16le", tmpa], check=True)
+acodec = ["-c:a", "pcm_s16le"] if spec["out"].endswith(".mov") else ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmpv, "-i", tmpa, "-map", "0:v", "-map", "1:a", "-c:v", "copy", *acodec, "-shortest", spec["out"]], check=True)
+os.remove(tmpv); os.remove(tmpa)
+print("ok", spec["out"])
