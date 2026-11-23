@@ -40,7 +40,7 @@ def path(seg, col):
 # ---- rendering ---------------------------------------------------------------------------------
 # The 9:16 window is cut with SUB-PIXEL precision per frame (OpenCV warpAffine, Lanczos) instead of
 # ffmpeg's crop filter: crop can only move in whole (even) pixels and its per-frame commands can land a
-# frame late – both make slow pans judder. Frames are decoded once (VideoToolbox), transformed in
+# frame late – both make slow pans judder. Frames are decoded once (VideoToolbox, or dav1d for AV1), transformed in
 # Python and piped into the encoder; audio is processed separately and muxed losslessly.
 import cv2
 
@@ -48,7 +48,7 @@ S = 1080 / CW                                   # scale from source window to ou
 segs = spec["segments"]; tmpv = spec["out"] + ".video.mov"; tmpa = spec["out"] + ".audio.wav"
 
 def reader(v0, v1):
-    return subprocess.Popen(["ffmpeg", "-v", "error", "-hwaccel", "videotoolbox", "-ss", f"{v0}", "-to", f"{v1}", "-i", PRJ["src"],
+    return subprocess.Popen(["ffmpeg", "-v", "error", *PRJ.get("decode", ["-hwaccel", "videotoolbox"]), "-ss", f"{v0}", "-to", f"{v1}", "-i", PRJ["src"],
                              "-vf", f"fps={PRJ.get('fps', '30000/1001')}", "-f", "rawvideo", "-pix_fmt", "bgr24", "-"],
                             stdout=subprocess.PIPE, bufsize=W * H * 3 * 2)
 

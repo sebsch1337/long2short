@@ -1,6 +1,6 @@
 ---
 name: long2short
-description: Turn a long landscape video (vlog, travel video, interview, podcast, talk) into ready-to-post vertical 9:16 short-form clips for TikTok, Instagram Reels and YouTube Shorts – picks the strongest moments (including visual moments without speech), reframes them around the subject with Apple Vision tracking, adds word-synced animated captions, a hook title, info stickers and sound effects, and renders 1080x1920 MP4s. Use this skill whenever the user wants clips, shorts, reels, TikToks, highlights, "the best moments", monetizable short videos, Hochformat/Kurzvideos or vertical crops from a video file, or asks to caption or reframe footage for social media – even if they don't name the skill.
+description: Turn a long landscape video (vlog, travel video, interview, podcast, talk) – a local file or a YouTube link – into ready-to-post vertical 9:16 short-form clips for TikTok, Instagram Reels and YouTube Shorts – picks the strongest moments (including visual moments without speech), reframes them around the subject with Apple Vision tracking, adds word-synced animated captions, a hook title, info stickers and sound effects, and renders 1080x1920 MP4s. Use this skill whenever the user wants clips, shorts, reels, TikToks, highlights, "the best moments", monetizable short videos, Hochformat/Kurzvideos or vertical crops from a video file, or asks to caption or reframe footage for social media, or pastes a YouTube link to turn into shorts – even if they don't name the skill.
 ---
 
 # long2short
@@ -18,11 +18,12 @@ python3 <skill>/scripts/l2s.py [-p PROJECT] <command> ...
 Finished clips go to `project.json → out` (default `<video folder>/clips`).
 
 Requirements: macOS (Apple Vision for tracking, VideoToolbox for fast ProRes), ffmpeg, Node (npx
-HyperFrames), Xcode command line tools (swiftc), whisper-cli + a ggml model (or python whisper).
+HyperFrames), Xcode command line tools (swiftc), whisper-cli + a ggml model (or python whisper);
+for links also a JS runtime for yt-dlp (deno, or the node that is already required).
 Caption timing (forced alignment) works for Latin-script languages; numbers are spelled out for German in `force_align.py` – extend `spell()` for other languages.
 Nothing is bundled with this skill except instructions and code. First time on a machine run
 `l2s.py setup` – it downloads everything else into `~/.cache/long2short`: a private Python
-env (torch/torchaudio for forced alignment), the CC0 sound effects, the caption font (Montserrat,
+env (torch/torchaudio for forced alignment, yt-dlp for links), the CC0 sound effects, the caption font (Montserrat,
 OFL) and, if none is installed, a whisper.cpp model; it also compiles the Apple Vision helpers.
 Then `l2s.py doctor`. Run `setup` again whenever `doctor` reports something missing. If something is missing, show the user the exact install command.
 
@@ -30,7 +31,16 @@ Then `l2s.py doctor`. Run `setup` again whenever `doctor` reports something miss
 
 ```
 l2s.py init "/path/video.mp4" --lang de
+l2s.py init "https://www.youtube.com/watch?v=…" --lang de     # a link instead of a file
 ```
+**A link** (YouTube or any other site yt-dlp supports) is downloaded first with yt-dlp in the best
+available quality – highest resolution/fps video (SDR preferred over HDR) + best audio, merged without
+re-encoding – into
+`<current folder>/<title>/<title>.mkv` (`--download-dir` to put it elsewhere); project folder and
+`clips/` then sit next to it. Use the language of the video for `--lang`. Only process videos the
+user owns or may use. AV1 sources are decoded with dav1d when the chip has no AV1 hardware decoder
+(chosen automatically, stored in `project.json → decode`). If the download fails, run `l2s.py setup` (updates yt-dlp) and retry.
+
 Creates proxy, 16 kHz audio, word transcript (`transcript.txt` with time codes), `scenes.json`
 and contact sheets (`sheets/`, one frame per scene with time codes). Long videos take minutes –
 run it in the background and tell the user.

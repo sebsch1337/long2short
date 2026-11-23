@@ -3,8 +3,9 @@
 
   l2s.py setup                          one-time: venv for forced alignment, compile Vision helpers
   l2s.py doctor                         check tools
-  l2s.py init  <video> [--lang de] [--project DIR] [--whisper-model PATH]
-                                          proxy, 16 kHz audio, word transcript, scene list, contact sheets
+  l2s.py init  <video|URL> [--lang de] [--dir DIR] [--whisper-model PATH]
+                                          proxy, 16 kHz audio, word transcript, scene list, contact sheets;
+                                          a YouTube (or other yt-dlp) URL is downloaded first in best quality
   l2s.py -p DIR plan  NN "A-B[,C-D]" [--teaser VS VE AS] [--seed T:CX:CY ...]
                                           automatic crop plan (Apple Vision) -> clips/NN/spec.json (+ review sheet)
   l2s.py -p DIR words NN                map transcript onto the clip, apply glossary -> words_raw.json
@@ -19,7 +20,7 @@ import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import SKILL, ASSETS, CACHE, VENV_PY, project, run, duration, swift_bin  # noqa: E402
+from common import SKILL, ASSETS, CACHE, VENV_PY, project, run, duration, swift_bin, decode_args  # noqa: E402
 
 S = SKILL / "scripts"
 WHISPER_MODEL_DIRS = [Path.home() / "models" / "whisper", Path.home() / ".cache" / "whisper.cpp",
@@ -55,6 +56,8 @@ def cmd_setup(a):
         run([sys.executable, "-m", "venv", str(CACHE / "venv")])
     run([str(VENV_PY), "-m", "pip", "install", "-q", "--upgrade", "pip"])
     run([str(VENV_PY), "-m", "pip", "install", "-q", "torch", "torchaudio", "numpy", "pillow", "opencv-python-headless"])
+    # yt-dlp for YouTube links – always upgraded, YouTube breaks old versions ([default] adds the EJS challenge solver)
+    run([str(VENV_PY), "-m", "pip", "install", "-q", "--upgrade", "yt-dlp[default]"])
     # 2) Apple Vision helpers
     for n in ("vision_track", "vision_follow"):
         print("compiled", swift_bin(n))
@@ -94,6 +97,7 @@ def cmd_doctor(a):
     chk("whisper (whisper-cli or python whisper)", shutil.which("whisper-cli") or shutil.which("whisper"), "brew install whisper-cpp  (+ a ggml model) or pip install openai-whisper")
     chk("forced-alignment venv", VENV_PY.exists(), "l2s.py setup")
     chk("sounds + font downloaded", (ASSETS / "fonts" / "montserrat-var.ttf").exists() and len(list((ASSETS / "sfx").glob("*.mp3"))) >= 4, "l2s.py setup")
+    chk("yt-dlp (YouTube links) + JS runtime", ytdlp() and js_runtime(), "l2s.py setup  (+ brew install deno, or node)")
     chk("whisper.cpp model", find_model(None) or not shutil.which("whisper-cli"), "l2s.py setup (downloads ggml-medium-q5_0)")
     sys.exit(0 if ok else 1)
 
@@ -159,21 +163,51 @@ def sheets(P):
     return (len(tiles) + 19) // 20
 
 
+def ytdlp():
+    v = CACHE / "venv" / "bin" / "yt-dlp"
+    return str(v) if v.exists() else shutil.which("yt-dlp")
+
+
+def js_runtime():  # yt-dlp needs one to solve YouTube's JS challenges; deno is its default
+    return "deno" if shutil.which("deno") else "node" if shutil.which("node") else None
+
+
+def download(url, dest):
+    """Best video + best audio, merged losslessly (no re-encode) into dest/<title>/<title>.mkv.
+    SDR is preferred over HDR (same resolution/fps): the pipeline and TikTok are SDR, HDR would look washed out."""
+    exe = ytdlp()
+    if not exe: sys.exit("yt-dlp missing -> l2s.py setup")
+    cmd = [exe, "--no-playlist", "-f", "bv*+ba/b", "-S", "hdr:sdr", "--merge-output-format", "mkv", "-P", str(dest),
+           "-o", "%(title).80B/%(title).80B.%(ext)s", "--print", "after_move:filepath", "--no-simulate",
+           "--progress", "--newline"]
+    rt = js_runtime()
+    if rt: cmd += ["--js-runtimes", rt]
+    print("downloading", url, "->", dest)
+    r = subprocess.run(cmd + [url], stdout=subprocess.PIPE, text=True)
+    paths = [l.strip() for l in r.stdout.splitlines() if l.strip().startswith("/")]
+    if r.returncode or not paths or not Path(paths[-1]).exists():
+        sys.exit("download failed – update yt-dlp with `l2s.py setup` and retry")
+    return Path(paths[-1])
+
+
 def cmd_init(a):
-    src = Path(a.video).resolve()
+    url = a.video if re.match(r"https?://", a.video) else None
+    src = download(url, Path(a.download_dir or ".").resolve()) if url else Path(a.video).resolve()
     P = Path(a.pdir).resolve() if a.pdir else src.parent / "long2short"
     P.mkdir(parents=True, exist_ok=True)
     probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                                                 "stream=width,height,r_frame_rate", "-of", "json", str(src)]))["streams"][0]
     cfg = {"src": str(src), "lang": a.lang, "width": probe["width"], "height": probe["height"], "fps": probe["r_frame_rate"],
            "out": str(Path(a.out).resolve() if a.out else src.parent / "clips"), "glossary": {}}
+    if url: cfg["url"] = url
+    cfg["decode"] = decode_args(src)
     old = P / "project.json"
     if old.exists(): cfg["glossary"] = json.loads(old.read_text()).get("glossary", {})
     json.dump(cfg, open(old, "w"), indent=1, ensure_ascii=False)
     if not (P / "audio16k.wav").exists():
         run(["ffmpeg", "-v", "error", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(P / "audio16k.wav")])
     if not (P / "proxy.mp4").exists():
-        run(["ffmpeg", "-v", "error", "-y", "-hwaccel", "videotoolbox", "-i", str(src), "-vf", "scale=640:-2",
+        run(["ffmpeg", "-v", "error", "-y", *cfg["decode"], "-i", str(src), "-vf", "scale=640:-2",
              "-c:v", "h264_videotoolbox", "-b:v", "1500k", "-an", str(P / "proxy.mp4")])
     if not (P / "words.json").exists():
         transcribe(P / "audio16k.wav", a.lang, P / "words.json", find_model(a.whisper_model))
@@ -291,6 +325,7 @@ def main():
     sp.add_parser("doctor")
     x = sp.add_parser("init"); x.add_argument("video"); x.add_argument("--lang", default="de"); x.add_argument("--out")
     x.add_argument("--whisper-model"); x.add_argument("--dir", dest="pdir", help="project folder (default: <video folder>/long2short)")
+    x.add_argument("--download-dir", help="for URLs: where the <title>/ folder is created (default: current folder)")
     x = sp.add_parser("plan"); x.add_argument("clip"); x.add_argument("ranges"); x.add_argument("--teaser", nargs=3); x.add_argument("--seed", action="append")
     for c in ("words", "cut", "build", "render"):
         sp.add_parser(c).add_argument("clip")

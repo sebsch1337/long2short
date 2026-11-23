@@ -49,6 +49,19 @@ def run(cmd, **kw):
     return subprocess.run(cmd, check=True, **kw)
 
 
+def decode_args(src):
+    """ffmpeg input options for decoding the source: VideoToolbox when the chip can decode the codec
+    (H.264/HEVC/VP9/ProRes, AV1 on M3+), otherwise software – dav1d for AV1, which YouTube often serves."""
+    hw = subprocess.run(["ffmpeg", "-v", "error", "-hwaccel", "videotoolbox", "-t", "0.5", "-i", str(src), "-an", "-f", "null", "-"],
+                        capture_output=True, text=True)
+    if hw.returncode == 0 and not hw.stderr.strip():
+        return ["-hwaccel", "videotoolbox"]
+    codec = subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name",
+                                     "-of", "csv=p=0", str(src)], text=True).strip()
+    decs = subprocess.run(["ffmpeg", "-hide_banner", "-decoders"], capture_output=True, text=True).stdout
+    return ["-c:v", "libdav1d"] if codec == "av1" and " libdav1d " in decs else []
+
+
 def duration(path):
     return float(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                                           "-of", "csv=p=0", str(path)]).decode())

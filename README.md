@@ -1,6 +1,6 @@
 # long2short ✂️📱
 
-A Claude Code plugin/skill that turns a long landscape video into **ready-to-post vertical clips**
+A Claude Code plugin/skill that turns a long landscape video – a local file or a **YouTube link** – into **ready-to-post vertical clips**
 for TikTok, Instagram Reels and YouTube Shorts – locally on your Mac.
 
 - 🧠 **Claude picks the moments** – from the transcript *and* from contact sheets, so strong
@@ -39,13 +39,20 @@ python3 ~/.claude/skills/long2short/scripts/l2s.py setup
 ```
 The repo ships **only instructions and code**. `setup` downloads everything else into
 `~/.cache/long2short` (nothing global is touched): a private Python venv with torch/torchaudio
-for forced alignment, four CC0 sound effects from Freesound, the Montserrat font (OFL) from
+for forced alignment and yt-dlp for links, four CC0 sound effects from Freesound, the Montserrat font (OFL) from
 Google Fonts, a whisper.cpp model if you have none, and it compiles the Apple Vision helpers.
 Check with `l2s.py doctor`.
 
 ## Use
 In Claude Code, in the folder with your video:
 > make TikTok clips from video.mp4 – the most clickable moments, 60–90 s, with captions
+
+or with a link:
+> make shorts from https://www.youtube.com/watch?v=…
+
+Links are downloaded with yt-dlp in the best available quality (best video + best audio, merged
+without re-encoding) into `<title>/` in the current folder. yt-dlp needs a JS runtime for YouTube:
+`deno` (`brew install deno`) or the `node` you already have.
 
 Claude picks up the skill from the request by itself. To call it explicitly, use the slash command:
 `/long2short` (personal skill) or `/long2short:long2short` (plugin – plugin skills are prefixed
