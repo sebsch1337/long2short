@@ -30,7 +30,13 @@ macOS (Apple Silicon recommended) · Claude Code · Python 3.10+ · `brew instal
 git clone https://github.com/sebsch1337/long2short.git
 ln -s "$PWD/long2short/skills/long2short" ~/.claude/skills/long2short
 ```
-Then once: `python3 ~/.claude/skills/long2short/scripts/l2s.py setup`
+### First-time setup
+Start Claude Code and say **"set up long2short"** – Claude runs the skill's `l2s.py setup` and
+`l2s.py doctor` from wherever the skill is installed (plugins live under `~/.claude/plugins/…`,
+not in `~/.claude/skills`). With the personal-skill install you can also run it yourself:
+```bash
+python3 ~/.claude/skills/long2short/scripts/l2s.py setup
+```
 The repo ships **only instructions and code**. `setup` downloads everything else into
 `~/.cache/long2short` (nothing global is touched): a private Python venv with torch/torchaudio
 for forced alignment, four CC0 sound effects from Freesound, the Montserrat font (OFL) from
@@ -41,10 +47,14 @@ Check with `l2s.py doctor`.
 In Claude Code, in the folder with your video:
 > make TikTok clips from video.mp4 – the most clickable moments, 60–90 s, with captions
 
+Claude picks up the skill from the request by itself. To call it explicitly, use the slash command:
+`/long2short` (personal skill) or `/long2short:long2short` (plugin – plugin skills are prefixed
+with the plugin name).
+
 Claude runs `l2s.py init`, proposes a shortlist, and builds each clip
 (`plan → words → align → finish`). Results land in `clips/` next to your video.
 
-Manual CLI: `python3 skills/long2short/scripts/l2s.py --help`
+Manual CLI: `python3 <skill folder>/scripts/l2s.py --help`
 
 ## Licenses
 Code MIT. Downloaded at setup (not part of this repo): Montserrat (SIL OFL 1.1), sound effects (CC0,
